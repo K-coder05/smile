@@ -1,6 +1,19 @@
 import { screen } from "@testing-library/react";
 import { renderApp } from "./test/renderApp";
 
+type App = ReturnType<typeof renderApp>;
+
+const TWIST_REVEAL = "Your smile is 10/10. Don't let an LLM tell you otherwise. :)";
+
+async function openCamera(app: App) {
+  await app.user.click(screen.getByRole("button", { name: "Rate my smile" }));
+}
+
+async function takeSelfie(app: App) {
+  await openCamera(app);
+  await app.user.click(await screen.findByRole("button", { name: "Take photo" }));
+}
+
 describe("Landing", () => {
   it("looks like a genuine AI smile rater", () => {
     renderApp();
@@ -26,7 +39,7 @@ describe("Camera", () => {
   it("shows a mirrored live preview from the camera and a shutter", async () => {
     const app = renderApp();
 
-    await app.user.click(screen.getByRole("button", { name: "Rate my smile" }));
+    await openCamera(app);
 
     const preview = await screen.findByLabelText("Camera preview");
     expect(app.photoSource.attachedTo).toBe(preview);
@@ -36,7 +49,7 @@ describe("Camera", () => {
 
   it("captures exactly one frame and stops the camera", async () => {
     const app = renderApp();
-    await app.user.click(screen.getByRole("button", { name: "Rate my smile" }));
+    await openCamera(app);
 
     await app.user.click(await screen.findByRole("button", { name: "Take photo" }));
 
@@ -45,9 +58,22 @@ describe("Camera", () => {
     expect(screen.queryByRole("button", { name: "Take photo" })).not.toBeInTheDocument();
   });
 
+  it("lets the user press the shutter again if a capture fails", async () => {
+    const app = renderApp();
+    app.photoSource.failNextCapture = true;
+    await openCamera(app);
+
+    await app.user.click(await screen.findByRole("button", { name: "Take photo" }));
+    expect(app.photoSource.stopped).toBe(false);
+    await app.user.click(screen.getByRole("button", { name: "Take photo" }));
+
+    expect(app.photoSource.captures).toBe(1);
+    expect(screen.getByRole("img", { name: "Your photo" })).toBeInTheDocument();
+  });
+
   it("always offers an upload fallback that leads into The Twist", async () => {
     const app = renderApp();
-    await app.user.click(screen.getByRole("button", { name: "Rate my smile" }));
+    await openCamera(app);
     await screen.findByRole("button", { name: "Take photo" });
 
     const selfie = new File(["pixels"], "selfie.jpg", { type: "image/jpeg" });
@@ -67,7 +93,7 @@ describe("Camera", () => {
       const app = renderApp();
       app.photoSource.cameraOpening = kind;
 
-      await app.user.click(screen.getByRole("button", { name: "Rate my smile" }));
+      await openCamera(app);
 
       expect(await screen.findByText(/can't reach your camera/i)).toBeInTheDocument();
       expect(screen.queryByLabelText("Camera preview")).not.toBeInTheDocument();
@@ -75,13 +101,6 @@ describe("Camera", () => {
     },
   );
 });
-
-const TWIST_REVEAL = "Your smile is 10/10. Don't let an LLM tell you otherwise. :)";
-
-async function takeSelfie(app: ReturnType<typeof renderApp>) {
-  await app.user.click(screen.getByRole("button", { name: "Rate my smile" }));
-  await app.user.click(await screen.findByRole("button", { name: "Take photo" }));
-}
 
 describe("The Twist", () => {
   it("shows the photo while loading for about 5 s, then the Reveal", async () => {

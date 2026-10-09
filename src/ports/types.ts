@@ -34,13 +34,13 @@ export type BlendshapeName =
 
 export type Blendshapes = Record<BlendshapeName, number>;
 
-export type FaceReading =
+export type FaceScan =
   | { kind: "blendshapes"; blendshapes: Blendshapes }
   | { kind: "no-face" }
   | { kind: "model-unavailable" };
 
 export interface FaceReader {
-  read(photo: Photo): Promise<FaceReading>;
+  read(photo: Photo): Promise<FaceScan>;
 }
 
 /** Exactly the four fields allowed to leave the device. */

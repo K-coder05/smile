@@ -5,7 +5,7 @@ import type {
   DescribeOutcome,
   DescribeRequest,
   FaceReader,
-  FaceReading,
+  FaceScan,
   Photo,
   PhotoSource,
   TimerHandle,
@@ -50,6 +50,8 @@ export class FakeClock implements Clock {
 export class FakePhotoSource implements PhotoSource {
   cameraOpening: CameraOpening["kind"] = "open";
   captures = 0;
+  /** Makes the next shutter press fail, as a real camera can before its first frame arrives. */
+  failNextCapture = false;
   attachedTo: HTMLVideoElement | null = null;
   stopped = false;
 
@@ -62,6 +64,10 @@ export class FakePhotoSource implements PhotoSource {
           this.attachedTo = video;
         },
         capture: async () => {
+          if (this.failNextCapture) {
+            this.failNextCapture = false;
+            throw new Error("No frame yet");
+          }
           this.captures++;
           return { url: `blob:camera-frame-${this.captures}` };
         },
@@ -79,11 +85,11 @@ export class FakePhotoSource implements PhotoSource {
 
 export class FakeFaceReader implements FaceReader {
   calls: Photo[] = [];
-  reading: FaceReading = { kind: "no-face" };
+  scan: FaceScan = { kind: "no-face" };
 
-  async read(photo: Photo): Promise<FaceReading> {
+  async read(photo: Photo): Promise<FaceScan> {
     this.calls.push(photo);
-    return this.reading;
+    return this.scan;
   }
 }
 

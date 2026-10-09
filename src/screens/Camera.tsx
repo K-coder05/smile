@@ -10,16 +10,16 @@ export function Camera({
 }) {
   const [opening, setOpening] = useState<CameraOpening | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const capturing = useRef(false);
+  const photoChosen = useRef(false);
 
   // The effect that opens the camera owns stopping it, so a remount never reuses a dead stream.
   useEffect(() => {
     let cancelled = false;
     let opened: CameraSession | null = null;
-    photoSource.openCamera().then((result) => {
-      if (result.kind === "open") opened = result.session;
+    photoSource.openCamera().then((opening) => {
+      if (opening.kind === "open") opened = opening.session;
       if (cancelled) opened?.stop();
-      else setOpening(result);
+      else setOpening(opening);
     });
     return () => {
       cancelled = true;
@@ -28,7 +28,7 @@ export function Camera({
   }, [photoSource]);
 
   const session = opening?.kind === "open" ? opening.session : null;
-  const blocked = opening !== null && opening.kind !== "open";
+  const cameraUnreachable = opening !== null && opening.kind !== "open";
 
   useEffect(() => {
     if (session && videoRef.current) session.attach(videoRef.current);
@@ -36,16 +36,23 @@ export function Camera({
 
   async function upload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
-    if (!file || capturing.current) return;
-    capturing.current = true;
+    if (!file || photoChosen.current) return;
+    photoChosen.current = true;
     session?.stop();
     onPhoto(await photoSource.fromFile(file));
   }
 
   async function takePhoto() {
-    if (!session || capturing.current) return;
-    capturing.current = true;
-    const photo = await session.capture();
+    if (!session || photoChosen.current) return;
+    photoChosen.current = true;
+    let photo: Photo;
+    try {
+      photo = await session.capture();
+    } catch {
+      // Usually the first frame hasn't arrived yet; the next press will work.
+      photoChosen.current = false;
+      return;
+    }
     session.stop();
     onPhoto(photo);
   }
@@ -66,13 +73,13 @@ export function Camera({
         </>
       )}
       {opening === null && <p className="camera-status">Starting camera…</p>}
-      {blocked && (
+      {cameraUnreachable && (
         <p className="camera-status">
           We can't reach your camera right now. No problem: pick a selfie from your photos instead.
         </p>
       )}
-      <label className={blocked ? "upload primary" : "upload link"}>
-        {blocked ? "Upload a photo" : "Upload a photo instead"}
+      <label className={cameraUnreachable ? "upload primary" : "upload link"}>
+        {cameraUnreachable ? "Upload a photo" : "Upload a photo instead"}
         <input type="file" accept="image/*" className="visually-hidden" onChange={upload} />
       </label>
     </main>
