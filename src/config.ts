@@ -23,3 +23,35 @@ export const LOADING_PROGRESS: readonly (readonly [atMs: number, percent: number
   [4200, 93],
   [4800, 97],
 ];
+
+/** The Real Reading's Reveal never arrives sooner than this after its loading begins. */
+export const REAL_READING_MIN_MS = 2500;
+
+// Features. Starting guesses, to be tuned against 15–20 real selfies.
+
+/** Eye involvement leans on eyeSquint: MediaPipe's cheekSquint often sits near zero. */
+export const EYE_SQUINT_WEIGHT = 0.8;
+export const CHEEK_SQUINT_WEIGHT = 0.2;
+/** Rescales eye involvement after weighting, so a natural crinkle can reach the thresholds. */
+export const EYE_INVOLVEMENT_GAIN = 1;
+/** Keeps symmetry from swinging wildly when both mouth corners barely move. */
+export const SYMMETRY_FLOOR = 0.05;
+/** Below this intensity there is too little smile to call lopsided, so symmetry counts as even. */
+export const EVEN_SYMMETRY_BELOW_INTENSITY = 0.15;
+
+// Archetype thresholds, read by the rules in reading/archetypes.ts.
+
+/** Below this intensity a smile is The Mona Lisa. */
+export const SUBTLE_INTENSITY = 0.15;
+/** Below this symmetry a smile is The Mischief. */
+export const LOPSIDED_SYMMETRY = 0.75;
+/** At or above this intensity a smile is big: The Belly Laugh, The Sunrise or The Red Carpet. */
+export const BIG_INTENSITY = 0.6;
+/** Below this intensity, with the eyes in on it, a smile is The Smize. */
+export const SMALL_INTENSITY = 0.4;
+/** At or above this openness a big smile is The Belly Laugh. */
+export const LAUGHING_OPENNESS = 0.35;
+/** At or above this eye involvement the eyes are clearly in on it. */
+export const EYES_IN_ON_IT = 0.5;
+/** At or above this eye involvement a medium smile is The Just-Heard-Good-News. */
+export const EYES_JOINING_IN = 0.3;

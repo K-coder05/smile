@@ -1,11 +1,6 @@
-import type { DescribeClient, FaceReader } from "./types";
+import type { DescribeClient } from "./types";
 
-// Stand-ins until The Real Reading exists: MediaPipe arrives in ticket 03, the describe Worker in 06.
-// The Twist never calls either.
-
-export const unavailableFaceReader: FaceReader = {
-  read: async () => ({ kind: "model-unavailable" }),
-};
+// Stand-in until the describe Worker arrives in ticket 06: every Reading uses its Fallback Description.
 
 export const fallbackDescribeClient: DescribeClient = {
   describe: async () => ({ kind: "fallback" }),

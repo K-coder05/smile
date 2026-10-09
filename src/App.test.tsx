@@ -1,10 +1,33 @@
-import { cleanup, screen } from "@testing-library/react";
+import { act, cleanup, screen } from "@testing-library/react";
+import type { Blendshapes, FaceScan } from "./ports/types";
 import { LOADING_LINES } from "./loadingLines";
 import { renderApp } from "./test/renderApp";
 
 type App = ReturnType<typeof renderApp>;
 
 const TWIST_REVEAL = "Your smile is 10/10. Don't let an LLM tell you otherwise. :)";
+
+/** A face with every Blendshape at rest, apart from the ones given. */
+function scanOf(moved: Partial<Blendshapes>): FaceScan {
+  return {
+    kind: "blendshapes",
+    blendshapes: {
+      mouthSmileLeft: 0,
+      mouthSmileRight: 0,
+      eyeSquintLeft: 0,
+      eyeSquintRight: 0,
+      cheekSquintLeft: 0,
+      cheekSquintRight: 0,
+      jawOpen: 0,
+      ...moved,
+    },
+  };
+}
+
+/** Lets pending promises (a face read, a minimum wait) resolve and React render the outcome. */
+async function settle() {
+  await act(async () => {});
+}
 
 async function openCamera(app: App) {
   await app.user.click(screen.getByRole("button", { name: "Rate my smile" }));
@@ -33,6 +56,14 @@ describe("Landing", () => {
     expect(screen.getAllByRole("button")).toHaveLength(1);
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
     expect(container).not.toHaveTextContent(/10\/10|LLM|actually read/i);
+  });
+
+  it("starts loading the face model once the page is up, without reading anything", () => {
+    const app = renderApp();
+
+    expect(screen.getByRole("button", { name: "Rate my smile" })).toBeInTheDocument();
+    expect(app.faceReader.preparations).toBe(1);
+    expect(app.faceReader.calls).toEqual([]);
   });
 });
 
@@ -228,5 +259,149 @@ describe("The loading sequence", () => {
     app.advance(5000);
     expect(screen.getByText(TWIST_REVEAL)).toBeInTheDocument();
     expect(screen.queryByTestId("confetti")).not.toBeInTheDocument();
+  });
+});
+
+describe("The Real Reading", () => {
+  async function reachTwistReveal(app: App) {
+    await takeSelfie(app);
+    app.advance(5000);
+  }
+
+  async function askForTheRealReading(app: App) {
+    await app.user.click(screen.getByRole("button", { name: "Okay, but actually read my smile" }));
+  }
+
+  /** Takes a selfie whose face reads as the given Blendshapes, then waits out The Real Reading. */
+  async function revealReadingFor(blendshapes: Partial<Blendshapes>) {
+    const app = renderApp();
+    app.faceReader.scan = scanOf(blendshapes);
+    await reachTwistReveal(app);
+    await askForTheRealReading(app);
+    app.advance(2500);
+    await settle();
+    return app;
+  }
+
+  it("reads the same photo from The Twist's Reveal and reveals an Archetype", async () => {
+    const app = await revealReadingFor({ mouthSmileLeft: 0.7, mouthSmileRight: 0.7, jawOpen: 0.5 });
+
+    expect(app.faceReader.calls).toEqual([{ url: "blob:camera-frame-1" }]);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("The Belly Laugh");
+    expect(screen.getByText("Caught mid-laugh. The best kind of photo.")).toBeInTheDocument();
+  });
+
+  it("keeps the loading sequence up for at least 2.5 s, even when the face is read at once", async () => {
+    const app = renderApp();
+    app.faceReader.scan = scanOf({ mouthSmileLeft: 0.7, mouthSmileRight: 0.7, jawOpen: 0.5 });
+    await reachTwistReveal(app);
+
+    await askForTheRealReading(app);
+    app.advance(2499);
+    await settle();
+    expect(screen.getByRole("progressbar")).toBeInTheDocument();
+    expect(screen.queryByText("The Belly Laugh")).not.toBeInTheDocument();
+
+    app.advance(1);
+    await settle();
+    expect(screen.getByText("The Belly Laugh")).toBeInTheDocument();
+  });
+
+  // Blendshapes picked by hand against the spec's Feature formulas and Archetype rules.
+  it.each<{ smile: string; blendshapes: Partial<Blendshapes>; archetype: string; tagline: string }>([
+    {
+      smile: "a barely-there smile",
+      blendshapes: { mouthSmileLeft: 0.1, mouthSmileRight: 0.1 },
+      archetype: "The Mona Lisa",
+      tagline: "Barely there, and everyone wants to know what you're thinking.",
+    },
+    {
+      smile: "a barely-there smile with one corner up (symmetry counts as even)",
+      blendshapes: { mouthSmileLeft: 0.2, mouthSmileRight: 0 },
+      archetype: "The Mona Lisa",
+      tagline: "Barely there, and everyone wants to know what you're thinking.",
+    },
+    {
+      smile: "a lopsided smile",
+      blendshapes: { mouthSmileLeft: 0.6, mouthSmileRight: 0.3 },
+      archetype: "The Mischief",
+      tagline: "One corner got there first. You're up to something.",
+    },
+    {
+      smile: "a big open-mouthed smile",
+      blendshapes: { mouthSmileLeft: 0.7, mouthSmileRight: 0.7, eyeSquintLeft: 0.8, eyeSquintRight: 0.8, jawOpen: 0.5 },
+      archetype: "The Belly Laugh",
+      tagline: "Caught mid-laugh. The best kind of photo.",
+    },
+    {
+      smile: "a big smile with crinkled eyes",
+      blendshapes: { mouthSmileLeft: 0.7, mouthSmileRight: 0.7, eyeSquintLeft: 0.8, eyeSquintRight: 0.8 },
+      archetype: "The Sunrise",
+      tagline: "The whole face is in on it.",
+    },
+    {
+      smile: "a big smile whose eye involvement rounds up to the threshold",
+      blendshapes: { mouthSmileLeft: 0.7, mouthSmileRight: 0.7, eyeSquintLeft: 0.624, eyeSquintRight: 0.624 },
+      archetype: "The Sunrise",
+      tagline: "The whole face is in on it.",
+    },
+    {
+      smile: "a small smile with crinkled eyes",
+      blendshapes: {
+        mouthSmileLeft: 0.3,
+        mouthSmileRight: 0.3,
+        eyeSquintLeft: 0.7,
+        eyeSquintRight: 0.7,
+        cheekSquintLeft: 0.2,
+        cheekSquintRight: 0.2,
+      },
+      archetype: "The Smize",
+      tagline: "The mouth is calm. The eyes are telling the joke.",
+    },
+    {
+      smile: "a big smile with calm eyes",
+      blendshapes: { mouthSmileLeft: 0.7, mouthSmileRight: 0.7, jawOpen: 0.2 },
+      archetype: "The Red Carpet",
+      tagline: "Polished, confident, camera-ready.",
+    },
+    {
+      smile: "a medium smile with the eyes joining in",
+      blendshapes: { mouthSmileLeft: 0.5, mouthSmileRight: 0.5, eyeSquintLeft: 0.5, eyeSquintRight: 0.5 },
+      archetype: "The Just-Heard-Good-News",
+      tagline: "Something nice just happened and it shows.",
+    },
+    {
+      smile: "a small, soft smile",
+      blendshapes: { mouthSmileLeft: 0.3, mouthSmileRight: 0.3 },
+      archetype: "The Quiet Glow",
+      tagline: "Soft, easy, the kind people feel relaxed around.",
+    },
+  ])(
+    "reveals $archetype for $smile, with its Tagline and a Fallback Description",
+    async ({ blendshapes, archetype, tagline }) => {
+      await revealReadingFor(blendshapes);
+
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(archetype);
+      // Reads top to bottom as the Archetype name, then the Tagline, then the Description.
+      const reveal = screen.getByRole("main").textContent ?? "";
+      expect(reveal.startsWith(archetype + tagline)).toBe(true);
+      const description = reveal.slice((archetype + tagline).length);
+      const sentences = description.split(/[.!?](?:\s|$)/).filter(Boolean);
+      expect(sentences.length).toBeGreaterThanOrEqual(2);
+      expect(sentences.length).toBeLessThanOrEqual(3);
+      expect(description).not.toMatch(
+        /\d|%|score|rank|grade|better|best|worse|improve|teeth|skin|\bage\b|gender|weight|attractive|fake|forced|weak/i,
+      );
+    },
+  );
+
+  it("touches the photo only through the face reader: nothing is described or sent", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const app = await revealReadingFor({ mouthSmileLeft: 0.3, mouthSmileRight: 0.3 });
+
+    expect(screen.getByText("The Quiet Glow")).toBeInTheDocument();
+    expect(app.describeClient.calls).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
   });
 });

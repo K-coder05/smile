@@ -85,7 +85,12 @@ export class FakePhotoSource implements PhotoSource {
 
 export class FakeFaceReader implements FaceReader {
   calls: Photo[] = [];
+  preparations = 0;
   scan: FaceScan = { kind: "no-face" };
+
+  prepare(): void {
+    this.preparations++;
+  }
 
   async read(photo: Photo): Promise<FaceScan> {
     this.calls.push(photo);

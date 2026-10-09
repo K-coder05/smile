@@ -40,6 +40,9 @@ export type FaceScan =
   | { kind: "model-unavailable" };
 
 export interface FaceReader {
+  /** Starts loading the face model in the background, so it is ready by the time it's needed. */
+  prepare(): void;
+  /** Reads the first face in the photo. Waits for the model if it is still loading. */
   read(photo: Photo): Promise<FaceScan>;
 }
 
