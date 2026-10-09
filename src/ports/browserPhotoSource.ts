@@ -21,6 +21,10 @@ export const browserPhotoSource: PhotoSource = {
   async fromFile(file: File): Promise<Photo> {
     return { url: URL.createObjectURL(file) };
   },
+
+  discard(photo: Photo) {
+    URL.revokeObjectURL(photo.url);
+  },
 };
 
 function cameraSession(stream: MediaStream): CameraSession {

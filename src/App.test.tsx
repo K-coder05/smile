@@ -8,20 +8,22 @@ type App = ReturnType<typeof renderApp>;
 const TWIST_REVEAL = "Your smile is 10/10. Don't let an LLM tell you otherwise. :)";
 
 /** A face with every Blendshape at rest, apart from the ones given. */
-function scanOf(moved: Partial<Blendshapes>): FaceScan {
+function faceOf(moved: Partial<Blendshapes>): Blendshapes {
   return {
-    kind: "blendshapes",
-    blendshapes: {
-      mouthSmileLeft: 0,
-      mouthSmileRight: 0,
-      eyeSquintLeft: 0,
-      eyeSquintRight: 0,
-      cheekSquintLeft: 0,
-      cheekSquintRight: 0,
-      jawOpen: 0,
-      ...moved,
-    },
+    mouthSmileLeft: 0,
+    mouthSmileRight: 0,
+    eyeSquintLeft: 0,
+    eyeSquintRight: 0,
+    cheekSquintLeft: 0,
+    cheekSquintRight: 0,
+    jawOpen: 0,
+    ...moved,
   };
+}
+
+/** A photo with exactly one face in it. */
+function scanOf(moved: Partial<Blendshapes>): FaceScan {
+  return { kind: "faces", faces: [faceOf(moved)] };
 }
 
 /** Lets pending promises (a face read, a minimum wait) resolve and React render the outcome. */
@@ -36,6 +38,15 @@ async function openCamera(app: App) {
 async function takeSelfie(app: App) {
   await openCamera(app);
   await app.user.click(await screen.findByRole("button", { name: "Take photo" }));
+}
+
+async function reachTwistReveal(app: App) {
+  await takeSelfie(app);
+  app.advance(5000);
+}
+
+async function askForTheRealReading(app: App) {
+  await app.user.click(screen.getByRole("button", { name: "Okay, but actually read my smile" }));
 }
 
 describe("Landing", () => {
@@ -263,15 +274,6 @@ describe("The loading sequence", () => {
 });
 
 describe("The Real Reading", () => {
-  async function reachTwistReveal(app: App) {
-    await takeSelfie(app);
-    app.advance(5000);
-  }
-
-  async function askForTheRealReading(app: App) {
-    await app.user.click(screen.getByRole("button", { name: "Okay, but actually read my smile" }));
-  }
-
   /** Takes a selfie whose face reads as the given Blendshapes, then waits out The Real Reading. */
   async function revealReadingFor(blendshapes: Partial<Blendshapes>) {
     const app = renderApp();
@@ -403,5 +405,249 @@ describe("The Real Reading", () => {
     expect(app.describeClient.calls).toEqual([]);
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
+  });
+});
+
+describe("The Real Reading's edge cases", () => {
+  const NO_FACE =
+    "We couldn't find a face, but we're sure it's a nice one. Try again with a bit more light?";
+  const NAP = "The smile reader is taking a nap. Your smile is still a 10.";
+
+  /** Runs The Real Reading on a photo the face reader reads as `scan`, after any extra setup. */
+  async function readSmileFrom(scan: FaceScan, setUp: (app: App) => void = () => {}) {
+    const app = renderApp();
+    app.faceReader.scan = scan;
+    setUp(app);
+    await reachTwistReveal(app);
+    await askForTheRealReading(app);
+    app.advance(2500);
+    await settle();
+    return app;
+  }
+
+  it("says kindly when it can't find a face, and offers Try again", async () => {
+    await readSmileFrom({ kind: "no-face" });
+
+    expect(screen.getByText(NO_FACE)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
+
+  it("reads the first detected face in a group photo", async () => {
+    await readSmileFrom({
+      kind: "faces",
+      faces: [
+        faceOf({ mouthSmileLeft: 0.6, mouthSmileRight: 0.3 }),
+        faceOf({ mouthSmileLeft: 0.7, mouthSmileRight: 0.7, jawOpen: 0.5 }),
+      ],
+    });
+
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("The Mischief");
+  });
+
+  it("says the smile reader is taking a nap when the face model failed to load", async () => {
+    await readSmileFrom({ kind: "model-unavailable" });
+
+    expect(screen.getByText(NAP)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
+
+  it("says the smile reader is taking a nap when reading the photo blows up", async () => {
+    await readSmileFrom(scanOf({}), (app) => {
+      app.faceReader.failRead = true;
+    });
+
+    expect(screen.getByText(NAP)).toBeInTheDocument();
+  });
+
+  it("still plays The Twist in full when the face model failed to load", async () => {
+    const app = renderApp();
+    app.faceReader.scan = { kind: "model-unavailable" };
+
+    await takeSelfie(app);
+    expect(screen.getByRole("progressbar")).toBeInTheDocument();
+    app.advance(5000);
+
+    expect(screen.getByText(TWIST_REVEAL)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Okay, but actually read my smile" }),
+    ).toBeInTheDocument();
+  });
+
+  describe("offline", () => {
+    function goOffline(app: App) {
+      vi.stubGlobal("fetch", () => Promise.reject(new TypeError("Failed to fetch")));
+      app.describeClient.offline = true;
+    }
+
+    it("plays The Twist in full", async () => {
+      const app = renderApp();
+      goOffline(app);
+
+      await takeSelfie(app);
+      app.advance(5000);
+
+      expect(screen.getByText(TWIST_REVEAL)).toBeInTheDocument();
+      expect(screen.getByTestId("confetti")).toBeInTheDocument();
+    });
+
+    it("gives a Reading with its Fallback Description when the face model is cached", async () => {
+      await readSmileFrom(scanOf({ mouthSmileLeft: 0.3, mouthSmileRight: 0.3 }), goOffline);
+
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("The Quiet Glow");
+      expect(screen.getByText(/feel relaxed around/)).toBeInTheDocument();
+    });
+
+    it("takes a nap when the face model isn't cached", async () => {
+      await readSmileFrom({ kind: "model-unavailable" }, goOffline);
+
+      expect(screen.getByText(NAP)).toBeInTheDocument();
+    });
+  });
+
+  describe("Try again", () => {
+    it.each<{ outcome: string; scan: FaceScan }>([
+      { outcome: "a Reading", scan: scanOf({ mouthSmileLeft: 0.3, mouthSmileRight: 0.3 }) },
+      { outcome: "no face found", scan: { kind: "no-face" } },
+      { outcome: "a napping smile reader", scan: { kind: "model-unavailable" } },
+    ])("after $outcome, discards the photo and returns to the Camera", async ({ scan }) => {
+      const app = await readSmileFrom(scan);
+
+      await app.user.click(screen.getByRole("button", { name: "Try again" }));
+
+      expect(app.photoSource.discarded).toEqual([{ url: "blob:camera-frame-1" }]);
+      expect(await screen.findByRole("button", { name: "Take photo" })).toBeInTheDocument();
+      expect(screen.queryByRole("img", { name: "Your photo" })).not.toBeInTheDocument();
+    });
+
+    it("sends the next photo straight to The Real Reading, without replaying The Twist", async () => {
+      const app = await readSmileFrom({ kind: "no-face" });
+      app.faceReader.scan = scanOf({ mouthSmileLeft: 0.7, mouthSmileRight: 0.7, jawOpen: 0.5 });
+      await app.user.click(screen.getByRole("button", { name: "Try again" }));
+
+      await app.user.click(await screen.findByRole("button", { name: "Take photo" }));
+      expect(screen.getByRole("img", { name: "Your photo" })).toHaveAttribute(
+        "src",
+        "blob:camera-frame-2",
+      );
+      app.advance(2499);
+      await settle();
+      expect(screen.getByRole("progressbar")).toBeInTheDocument();
+      app.advance(1);
+      await settle();
+
+      expect(screen.queryByText(TWIST_REVEAL)).not.toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("The Belly Laugh");
+      expect(app.faceReader.calls).toEqual([
+        { url: "blob:camera-frame-1" },
+        { url: "blob:camera-frame-2" },
+      ]);
+    });
+
+    it("sends uploaded photos straight to The Real Reading too, every time", async () => {
+      const app = await readSmileFrom({ kind: "no-face" });
+      app.faceReader.scan = scanOf({ mouthSmileLeft: 0.3, mouthSmileRight: 0.3 });
+
+      for (const name of ["first.jpg", "second.jpg"]) {
+        await app.user.click(screen.getByRole("button", { name: "Try again" }));
+        await screen.findByRole("button", { name: "Take photo" });
+        await app.user.upload(
+          screen.getByLabelText("Upload a photo instead"),
+          new File(["pixels"], name, { type: "image/jpeg" }),
+        );
+        app.advance(2500);
+        await settle();
+
+        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("The Quiet Glow");
+      }
+      expect(app.photoSource.discarded).toEqual([
+        { url: "blob:camera-frame-1" },
+        { url: "blob:upload-first.jpg" },
+      ]);
+    });
+  });
+});
+
+describe("Numbers on screen", () => {
+  /** Everything a user can see or hear: visible text plus the accessible text in attributes. */
+  function everythingSaid(): string {
+    const attributes = [...document.body.querySelectorAll("*")].flatMap((element) =>
+      ["alt", "aria-label", "aria-valuetext", "title", "placeholder"]
+        .map((name) => element.getAttribute(name))
+        .filter((value): value is string => value !== null),
+    );
+    return [document.body.textContent ?? "", ...attributes].join("\n");
+  }
+
+  /** The Twist's "10/10", and the nap's callback to it, are the only numbers the app ever says. */
+  function expectNoNumbers(where: string) {
+    const said = everythingSaid()
+      .replace("Your smile is 10/10.", "")
+      .replace("Your smile is still a 10.", "");
+    expect(said, where).not.toMatch(/\d|%/);
+  }
+
+  it("shows no digit or percent sign on any screen but The Twist's 10/10", async () => {
+    const app = renderApp();
+    expectNoNumbers("Landing");
+
+    await openCamera(app);
+    await screen.findByRole("button", { name: "Take photo" });
+    expectNoNumbers("Camera");
+
+    await app.user.click(screen.getByRole("button", { name: "Take photo" }));
+    for (let t = 0; t < 5000; t += 100) {
+      expectNoNumbers(`The Twist's loading at ${t} ms`);
+      app.advance(100);
+    }
+    expect(screen.getByText(TWIST_REVEAL)).toBeInTheDocument();
+    expectNoNumbers("The Twist's Reveal");
+
+    app.faceReader.scan = { kind: "no-face" };
+    await askForTheRealReading(app);
+    for (let t = 0; t < 2500; t += 100) {
+      expectNoNumbers(`The Real Reading's loading at ${t} ms`);
+      app.advance(100);
+    }
+    await settle();
+    expectNoNumbers("No face found");
+
+    const archetypes = new Set<string>();
+    for (const scan of [
+      { kind: "model-unavailable" } as const,
+      scanOf({ mouthSmileLeft: 0.1, mouthSmileRight: 0.1 }),
+      scanOf({ mouthSmileLeft: 0.6, mouthSmileRight: 0.3 }),
+      scanOf({ mouthSmileLeft: 0.7, mouthSmileRight: 0.7, jawOpen: 0.5 }),
+      scanOf({ mouthSmileLeft: 0.7, mouthSmileRight: 0.7, eyeSquintLeft: 0.8, eyeSquintRight: 0.8 }),
+      scanOf({
+        mouthSmileLeft: 0.3,
+        mouthSmileRight: 0.3,
+        eyeSquintLeft: 0.7,
+        eyeSquintRight: 0.7,
+        cheekSquintLeft: 0.2,
+        cheekSquintRight: 0.2,
+      }),
+      scanOf({ mouthSmileLeft: 0.7, mouthSmileRight: 0.7, jawOpen: 0.2 }),
+      scanOf({ mouthSmileLeft: 0.5, mouthSmileRight: 0.5, eyeSquintLeft: 0.5, eyeSquintRight: 0.5 }),
+      scanOf({ mouthSmileLeft: 0.3, mouthSmileRight: 0.3 }),
+    ]) {
+      app.faceReader.scan = scan;
+      await app.user.click(screen.getByRole("button", { name: "Try again" }));
+      await app.user.click(await screen.findByRole("button", { name: "Take photo" }));
+      app.advance(2500);
+      await settle();
+      const shown = screen.getByRole("heading", { level: 1 }).textContent ?? "";
+      expectNoNumbers(shown);
+      if (scan.kind === "faces") archetypes.add(shown);
+    }
+    expect(archetypes.size).toBe(8);
+  });
+
+  it("shows no digit or percent sign when the camera can't be reached", async () => {
+    const app = renderApp();
+    app.photoSource.cameraOpening = "denied";
+    await openCamera(app);
+    await screen.findByText(/can't reach your camera/i);
+
+    expectNoNumbers("Camera unreachable");
   });
 });

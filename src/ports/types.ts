@@ -21,6 +21,8 @@ export type CameraOpening =
 export interface PhotoSource {
   openCamera(): Promise<CameraOpening>;
   fromFile(file: File): Promise<Photo>;
+  /** Lets go of a photo for good, once nothing will show or read it again. */
+  discard(photo: Photo): void;
 }
 
 export type BlendshapeName =
@@ -35,14 +37,15 @@ export type BlendshapeName =
 export type Blendshapes = Record<BlendshapeName, number>;
 
 export type FaceScan =
-  | { kind: "blendshapes"; blendshapes: Blendshapes }
+  /** Every face found, in the order the model detected them. */
+  | { kind: "faces"; faces: [Blendshapes, ...Blendshapes[]] }
   | { kind: "no-face" }
   | { kind: "model-unavailable" };
 
 export interface FaceReader {
   /** Starts loading the face model in the background, so it is ready by the time it's needed. */
   prepare(): void;
-  /** Reads the first face in the photo. Waits for the model if it is still loading. */
+  /** Reads the faces in the photo. Waits for the model if it is still loading. */
   read(photo: Photo): Promise<FaceScan>;
 }
 

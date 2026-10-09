@@ -25,7 +25,11 @@ export function RealReadingLoading({
     const minimumElapsed = new Promise<void>((resolve) => {
       timer = clock.setTimeout(resolve, REAL_READING_MIN_MS);
     });
-    Promise.all([faceReader.read(photo), minimumElapsed]).then(([scan]) => {
+    // A reader that throws is as good as one whose model never loaded.
+    const scanned = faceReader
+      .read(photo)
+      .catch((): FaceScan => ({ kind: "model-unavailable" }));
+    Promise.all([scanned, minimumElapsed]).then(([scan]) => {
       if (!cancelled) onDoneRef.current(scan);
     });
     return () => {

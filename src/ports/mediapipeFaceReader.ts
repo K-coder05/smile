@@ -1,4 +1,4 @@
-import type { FaceLandmarker } from "@mediapipe/tasks-vision";
+import type { Classifications, FaceLandmarker } from "@mediapipe/tasks-vision";
 // Self-hosted from the installed package, so the WASM is always the same pinned version as the library.
 import wasmLoaderPath from "@mediapipe/tasks-vision/vision_wasm_internal.js?url";
 import wasmBinaryPath from "@mediapipe/tasks-vision/vision_wasm_internal.wasm?url";
@@ -41,6 +41,12 @@ function loadLandmarker(): Promise<FaceLandmarker> {
   return landmarker;
 }
 
+function toBlendshapes({ categories }: Classifications): Blendshapes {
+  const coefficientOf = (name: BlendshapeName) =>
+    categories.find((category) => category.categoryName === name)?.score ?? 0;
+  return Object.fromEntries(BLENDSHAPES.map((name) => [name, coefficientOf(name)])) as Blendshapes;
+}
+
 /** The only code that analyses the photo. It is read in memory, on the device. */
 export const mediapipeFaceReader: FaceReader = {
   prepare() {
@@ -60,14 +66,9 @@ export const mediapipeFaceReader: FaceReader = {
       const image = new Image();
       image.src = photo.url;
       await image.decode();
-      const categories = reader.detect(image).faceBlendshapes[0]?.categories;
-      if (!categories) return { kind: "no-face" };
-      const coefficientOf = (name: BlendshapeName) =>
-        categories.find((category) => category.categoryName === name)?.score ?? 0;
-      const blendshapes = Object.fromEntries(
-        BLENDSHAPES.map((name) => [name, coefficientOf(name)]),
-      ) as Blendshapes;
-      return { kind: "blendshapes", blendshapes };
+      const [first, ...rest] = reader.detect(image).faceBlendshapes.map(toBlendshapes);
+      if (!first) return { kind: "no-face" };
+      return { kind: "faces", faces: [first, ...rest] };
     } catch {
       // An image the browser or the model can't make sense of: treat it as a photo with no face to read.
       return { kind: "no-face" };

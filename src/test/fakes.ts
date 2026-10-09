@@ -54,6 +54,7 @@ export class FakePhotoSource implements PhotoSource {
   failNextCapture = false;
   attachedTo: HTMLVideoElement | null = null;
   stopped = false;
+  discarded: Photo[] = [];
 
   async openCamera(): Promise<CameraOpening> {
     if (this.cameraOpening !== "open") return { kind: this.cameraOpening };
@@ -81,12 +82,18 @@ export class FakePhotoSource implements PhotoSource {
   async fromFile(file: File): Promise<Photo> {
     return { url: `blob:upload-${file.name}` };
   }
+
+  discard(photo: Photo): void {
+    this.discarded.push(photo);
+  }
 }
 
 export class FakeFaceReader implements FaceReader {
   calls: Photo[] = [];
   preparations = 0;
   scan: FaceScan = { kind: "no-face" };
+  /** Makes reading throw, as a broken model or a corrupt image could. */
+  failRead = false;
 
   prepare(): void {
     this.preparations++;
@@ -94,6 +101,7 @@ export class FakeFaceReader implements FaceReader {
 
   async read(photo: Photo): Promise<FaceScan> {
     this.calls.push(photo);
+    if (this.failRead) throw new Error("The face model fell over");
     return this.scan;
   }
 }
@@ -101,9 +109,12 @@ export class FakeFaceReader implements FaceReader {
 export class FakeDescribeClient implements DescribeClient {
   calls: DescribeRequest[] = [];
   outcome: DescribeOutcome = { kind: "fallback" };
+  /** Makes every request fail the way fetch does with no connection. */
+  offline = false;
 
   async describe(request: DescribeRequest): Promise<DescribeOutcome> {
     this.calls.push(request);
+    if (this.offline) throw new TypeError("Failed to fetch");
     return this.outcome;
   }
 }
