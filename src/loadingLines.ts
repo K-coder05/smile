@@ -1,7 +1,7 @@
 // The jokes shown while the app "thinks". Add a line here and it joins the rotation.
 export const LOADING_LINES = [
   "Counting eye crinkles…",
-  "Consulting 4 billion parameters…",
+  "Consulting four billion parameters…",
   "Parameters are arguing…",
   "Measuring cheek altitude…",
   "Cross-referencing with every golden retriever photo…",
