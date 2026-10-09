@@ -1,9 +1,8 @@
 import { useState } from "react";
-import { TWIST_LOADING_MS } from "./config";
 import type { Photo, Ports } from "./ports/types";
 import { Camera } from "./screens/Camera";
 import { Landing } from "./screens/Landing";
-import { Loading } from "./screens/Loading";
+import { TwistLoading } from "./screens/TwistLoading";
 import { TwistReveal } from "./screens/TwistReveal";
 
 type Screen =
@@ -27,10 +26,9 @@ export function App({ ports }: { ports: Ports }) {
       );
     case "twist-loading":
       return (
-        <Loading
+        <TwistLoading
           photo={screen.photo}
           clock={ports.clock}
-          durationMs={TWIST_LOADING_MS}
           onDone={() => setScreen({ name: "twist-reveal", photo: screen.photo })}
         />
       );

@@ -6,10 +6,10 @@
 
 **Status:** ready-for-agent
 
-- [ ] A scanning-line animation plays over the captured photo during loading
-- [ ] The progress bar stalls, jumps, and goes backwards exactly once per run
-- [ ] Loading lines rotate about every 900 ms (driven by the clock port) in random order, with no repeats within a run
-- [ ] All loading lines live in a single list, so adding one is a one-line change. The initial list matches the build spec.
-- [ ] The Twist's Reveal shows a small confetti burst
-- [ ] With `prefers-reduced-motion` set, there is no confetti and no scan animation (Seam 1 test)
-- [ ] The same loading sequence can be reused by The Real Reading
+- [x] A scanning-line animation plays over the captured photo during loading
+- [x] The progress bar stalls, jumps, and goes backwards exactly once per run
+- [x] Loading lines rotate about every 900 ms (driven by the clock port) in random order, with no repeats within a run
+- [x] All loading lines live in a single list, so adding one is a one-line change. The initial list matches the build spec.
+- [x] The Twist's Reveal shows a small confetti burst
+- [x] With `prefers-reduced-motion` set, there is no confetti and no scan animation (Seam 1 test)
+- [x] The same loading sequence can be reused by The Real Reading

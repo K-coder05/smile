@@ -1,4 +1,5 @@
-import { screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
+import { LOADING_LINES } from "./loadingLines";
 import { renderApp } from "./test/renderApp";
 
 type App = ReturnType<typeof renderApp>;
@@ -130,5 +131,102 @@ describe("The Twist", () => {
     expect(app.describeClient.calls).toEqual([]);
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
+  });
+});
+
+describe("The loading sequence", () => {
+  function progress() {
+    return Number(screen.getByRole("progressbar").getAttribute("aria-valuenow"));
+  }
+
+  function loadingLine() {
+    return screen.getByRole("status").textContent;
+  }
+
+  it("plays a scanning line over the photo", async () => {
+    const app = renderApp();
+    await takeSelfie(app);
+
+    expect(screen.getByTestId("scan-line")).toBeInTheDocument();
+  });
+
+  it("moves the progress bar unevenly: it stalls, jumps and goes backwards exactly once", async () => {
+    const app = renderApp();
+    await takeSelfie(app);
+
+    const samples = [progress()];
+    for (let t = 100; t < 5000; t += 100) {
+      app.advance(100);
+      samples.push(progress());
+    }
+    const steps = samples.slice(1).map((value, i) => value - samples[i]);
+
+    expect(steps.filter((step) => step < 0)).toHaveLength(1);
+    expect(Math.max(...steps)).toBeGreaterThanOrEqual(15);
+    const longestStall = Math.max(
+      ...samples.map((value, i) => {
+        let run = 0;
+        while (i + run + 1 < samples.length && samples[i + run + 1] === value) run++;
+        return value > 0 && value < 100 ? run : 0;
+      }),
+    );
+    expect(longestStall * 100).toBeGreaterThanOrEqual(600);
+  });
+
+  it("rotates a loading line about every 900 ms, never repeating within a run", async () => {
+    const app = renderApp();
+    await takeSelfie(app);
+
+    const shown = [loadingLine()];
+    for (let i = 0; i < 5; i++) {
+      app.advance(899);
+      expect(loadingLine()).toBe(shown[shown.length - 1]);
+      app.advance(1);
+      shown.push(loadingLine());
+    }
+
+    expect(new Set(shown).size).toBe(shown.length);
+    for (const line of shown) expect(LOADING_LINES).toContain(line);
+  });
+
+  it("shows the loading lines in random order", async () => {
+    const random = vi.spyOn(Math, "random");
+    try {
+      random.mockReturnValue(0.999);
+      let app = renderApp();
+      await takeSelfie(app);
+      const firstRun = loadingLine();
+      cleanup();
+
+      random.mockReturnValue(0);
+      app = renderApp();
+      await takeSelfie(app);
+      const secondRun = loadingLine();
+
+      expect(secondRun).not.toBe(firstRun);
+    } finally {
+      random.mockRestore();
+    }
+  });
+
+  it("celebrates The Twist's Reveal with a confetti burst", async () => {
+    const app = renderApp();
+    await takeSelfie(app);
+    app.advance(5000);
+
+    expect(screen.getByText(TWIST_REVEAL)).toBeInTheDocument();
+    expect(screen.getByTestId("confetti")).toBeInTheDocument();
+  });
+
+  it("drops the scan animation and the confetti when the user prefers reduced motion", async () => {
+    const app = renderApp({ reducedMotion: true });
+    await takeSelfie(app);
+
+    expect(screen.getByRole("progressbar")).toBeInTheDocument();
+    expect(screen.queryByTestId("scan-line")).not.toBeInTheDocument();
+
+    app.advance(5000);
+    expect(screen.getByText(TWIST_REVEAL)).toBeInTheDocument();
+    expect(screen.queryByTestId("confetti")).not.toBeInTheDocument();
   });
 });
